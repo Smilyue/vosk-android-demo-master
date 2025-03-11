@@ -1,0 +1,46 @@
+package org.vosk.demo;
+
+import java.util.HashMap;
+import java.util.Map;
+    class TrieNode {
+        Map<Character, TrieNode> children = new HashMap<>();
+        boolean isEndOfWord = false;
+        int value;
+    }
+
+    public class Trie {
+        private TrieNode root;
+
+        public Trie() {
+            root = new TrieNode();
+        }
+
+        // 插入關鍵字
+        public void insert(String keyword, int value) {
+            TrieNode node = root;
+            for (char ch : keyword.toCharArray()) {
+                node.children.putIfAbsent(ch, new TrieNode());
+                node = node.children.get(ch);
+            }
+            node.isEndOfWord = true;
+            node.value = value;
+        }
+
+        // 搜尋關鍵字並獲取對應值
+        public Integer search(String keyword) {
+            TrieNode node = root;
+            for (char ch : keyword.toCharArray()) {
+                if (!node.children.containsKey(ch)) {
+                    return null;  // 未找到
+                }
+                node = node.children.get(ch);
+            }
+            return node.isEndOfWord ? node.value : null;
+        }
+
+        // 搜尋是否存在關鍵字
+        public boolean contains(String keyword) {
+            return search(keyword) != null;
+        }
+    }
+

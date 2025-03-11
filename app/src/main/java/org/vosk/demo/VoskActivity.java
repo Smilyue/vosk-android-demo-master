@@ -22,14 +22,10 @@ import android.content.pm.PackageManager;
 import android.icu.text.SimpleDateFormat;
 import android.icu.text.Transliterator;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-import android.os.Message;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.widget.Button;
 import android.widget.TextView;
-import android.widget.Toast;
 import android.widget.ToggleButton;
 
 import org.json.JSONException;
@@ -43,26 +39,24 @@ import org.vosk.android.SpeechService;
 import org.vosk.android.SpeechStreamService;
 import org.vosk.android.StorageService;
 
-import java.io.DataOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 public class VoskActivity extends Activity implements
-        RecognitionListener {
+        RecognitionListener{
 
     static private final int STATE_START = 0;
     static private final int STATE_READY = 1;
@@ -72,15 +66,17 @@ public class VoskActivity extends Activity implements
     private static final int msg_error = 7;
     private static final int msg_success = 8;
     private static final int Maxnum = 3;
+    public static long startTime;
     private int retryCount = 0;
-
-    private ExecutorService executorService = Executors.newFixedThreadPool(6);
+    private Trie keywordsTrie = new Trie();
+    private ExecutorService executorService = Executors.newFixedThreadPool(10);
     private boolean isModelLoaded = false;
+    private boolean isPaused = false;
     private TcpClient tcpClient;
     private AppDatabase db;
     /* Used to handle permission request */
     private static final int PERMISSIONS_REQUEST_RECORD_AUDIO = 1;
-
+    private Map<String, Integer> keywordMap = new HashMap<>();
     private static final Transliterator SIMPLIFIED_TO_TRADITIONAL =
             Transliterator.getInstance("Simplified-Traditional");
     private Model model;
@@ -104,16 +100,17 @@ public class VoskActivity extends Activity implements
         tvKeywords = findViewById(R.id.tvKeywords);
         db = AppDatabase.getDatabase(this);
         if (db != null) {
-            Log.d("VoskActivity", "数据库已成功初始化");
+            Log.d("VoskActivity", "數據庫已成功初始化");
         } else {
-            Log.e("VoskActivity", "数据库初始化失败");
+            Log.e("VoskActivity", "數據庫初始化失败");
         }
-        Log.d("VoskActivity", "数据库初始化完成");
+        Log.d("VoskActivity", "數據庫初始化完成");
+        loadkeyword();
         setUiState(STATE_START);
         findViewById(R.id.recognize_file).setOnClickListener(view -> recognizeFile());
         findViewById(R.id.recognize_mic).setOnClickListener(view -> recognizeMicrophone());
         ((ToggleButton) findViewById(R.id.pause)).setOnCheckedChangeListener((view, isChecked) -> pause(isChecked));
-        tcpClient = new TcpClient("192.168.0.79",8080,Executors.newSingleThreadExecutor());
+        tcpClient = new TcpClient("192.168.106.1",8080,Executors.newSingleThreadExecutor());
         tcpClient.initializeTcpConnection();
         LibVosk.setLogLevel(LogLevel.INFO);
         // Check if user has given permission to record audio, init the model after permission is granted
@@ -126,7 +123,7 @@ public class VoskActivity extends Activity implements
     }
 
     private void initModel() {
-        StorageService.unpack(this, "vosk-model-cn-kaldi-multicn-0.15", "model",
+        StorageService.unpack(this, "vosk-model-small-cn-0.22", "model",
                 (model) -> {
                     this.model = model;
                     isModelLoaded = true;
@@ -141,16 +138,30 @@ public class VoskActivity extends Activity implements
                 return;
             }
             InstructionDao instructionDao = db.instructionDao();
-            keywordCache = instructionDao.getAllKeywords(); // 从数据库加载关键字到缓存
+            keywordCache = instructionDao.getAllKeywords(); //取得關鍵字
             Log.d("Cache", "關鍵字已儲存：" + keywordCache.toString());
+            if (keywordCache != null && !keywordCache.isEmpty()) {
+                for (String keyword : keywordCache) {
+                    Integer value = instructionDao.findIntValueByKeyword(keyword);
+                    if (value != null) {
+                        keywordsTrie.insert(keyword, value);
+                    }else {
+                        Log.w("VoskActivity", "未找到關鍵字對應的數值：" + keyword);
+                    }
+                }
+                Log.d("VoskActivity", "Trie 已成功加載，關鍵字數量: " + keywordCache.size());
+            }else {
+                Log.w("VoskActivity", "keywordCache is empty");
+            }
         });
     }
-    private List<String> getKeywordsFromCache() {
+
+   /* private List<String> getKeywordsFromCache() {
         if (keywordCache == null || keywordCache.isEmpty()) {
             loadkeyword();
         }
         return keywordCache;
-    }
+    }*/
 
 
 
@@ -190,80 +201,100 @@ public class VoskActivity extends Activity implements
 
     @Override
     public void onResult(String hypothesis) {
-        String traditionalResult = SIMPLIFIED_TO_TRADITIONAL.transliterate(hypothesis);
-        resultView.append(traditionalResult + "\n");
-    }
-
-    @Override
-    public void onFinalResult(String hypothesis) {
+        if (isPaused) return;
+        long speechEndTime = System.currentTimeMillis();
+        long speechProcessingTime = speechEndTime - startTime;
+        Log.d("VoskActivity", "語音處理耗時: " + speechProcessingTime + " 毫秒");
         try {
+            long jsonStart = System.currentTimeMillis();
             JSONObject jsonObject = new JSONObject(hypothesis);
             String extractedText = jsonObject.optString("text", "");
+            Log.d("VoskActivity", "JSON 解析耗時: " + (System.currentTimeMillis() - jsonStart) + " 毫秒");
             Log.d("VoskActivity", "Extracted Text: " + extractedText);
+            long transliterateStart = System.currentTimeMillis();
             String traditionalResult = SIMPLIFIED_TO_TRADITIONAL.transliterate(extractedText);
+            Log.d("VoskActivity", "字串轉換耗時: " + (System.currentTimeMillis() - transliterateStart) + " 毫秒");
             Log.d("VoskActivity", "Traditional Result: " + traditionalResult);
             executorService.execute(() -> {
+                long processStart = System.currentTimeMillis();
                 if (!tcpClient.isTcpConnected()){
-                     Log.w("VoskActivity","TCP未連接");
-                     return;
+                    Log.w("VoskActivity","TCP未連接");
+                    return;
                 }
                 if (!isModelLoaded){
                     Log.w("VoskActivity","模型未加載");
                     return;
                 }
-                List<String> keywords = getKeywordsFromCache();
+                //List<String> keywords = getKeywordsFromCache();
                 List<String> matchedKeywords = new ArrayList<>();
-                for (String keyword : keywords) {
-                    if (traditionalResult.contains(keyword.trim())) {
-                        matchedKeywords.add(keyword);
+                for (int i = 0; i < traditionalResult.length(); i++) {
+                    for (int j = i + 1; j <= traditionalResult.length(); j++) {
+                        String subString = traditionalResult.substring(i, j);
+                        if (keywordsTrie.contains(subString)) {
+                            matchedKeywords.add(subString);
+                            i = j - 1;  // 跳過已匹配的部分，避免重複匹配
+                            break;
+                        }
                     }
                 }
+                long processingEnd = System.currentTimeMillis();
+                long processingTime = processingEnd - processStart;
+                Log.d("VoskActivity", "關鍵字匹配耗時: " + processingTime + " 毫秒");
 
                 runOnUiThread(() -> {
                     if (!matchedKeywords.isEmpty()) {
-                        generatePacket(matchedKeywords);
+                        generatePacket(matchedKeywords, speechEndTime);
                         updateUI(matchedKeywords, traditionalResult);
                     }
+                    Log.d("VoskActivity", "onResult 方法執行時間: " +  (System.currentTimeMillis() - processStart) + "毫秒");
                 });
             });
-            // 設置狀態為完成
-            setUiState(STATE_DONE);
 
-            // 釋放資源
-            if (speechStreamService != null) {
-                speechStreamService = null;
-            }
         }catch (JSONException e) {
             Log.e("VoskActivity", "Error parsing hypothesis JSON", e);
         }
-
+        long endTime = System.currentTimeMillis();
+        Log.d("VoskActivity", "onResult 總耗時: " + (endTime - startTime) + " 毫秒");
     }
-    private void generatePacket(List<String> keywords) {
+
+    @Override
+    public void onFinalResult(String hypothesis) {
+        Log.d("VoskActivity", "Final Result: " + hypothesis);
+    }
+    private void generatePacket(List<String> keywords, long speechEndTime) {
         executorService.execute(() -> {
+            long packetStartTime = System.currentTimeMillis();
             if (!tcpClient.isTcpConnected() || !isModelLoaded) {
                 Log.e(TAG, "TCP 連接未建立或模型未載入，無法生成封包");
                 return;
             }
-            InstructionDao instructionDao = db.instructionDao();
-            StringBuilder packet = new StringBuilder();
-            packet.append("A5 ");
+
+            ByteArrayOutputStream packet = new ByteArrayOutputStream();
+            packet.write(0xA5);
             Log.d("資料庫連接", "已連接");
+
             for (String keyword : keywords) {
-                Integer intValue = instructionDao.findIntValueByKeyword(keyword);
+                Integer intValue = keywordsTrie.search(keyword);
                 if (intValue != null) {
-                    packet.append(intValue).append(" ");
+                    packet.write(intValue & 0xFF);
                 }
             }
 
-            packet.append("FA");
-            runOnUiThread(() -> tvpacket.setText(packet.toString()));
-            tcpClient.sendPacket(packet.toString());
+            packet.write(0xFA);
+            byte[] packetstream = packet.toByteArray();
+            long packetGenEndTime = System.currentTimeMillis();
 
+            long packetGenerationTime = packetGenEndTime - packetStartTime;
+            Log.d(TAG, "封包生成耗時: " + packetGenerationTime + " 毫秒");
+
+            tcpClient.sendPacket(packetstream, speechEndTime, packetGenEndTime);
+
+            runOnUiThread(() -> tvpacket.setText(HexUtils.byteToHexString(packetstream)));
         });
     }
     private void updateUI(List<String> matchedKeywords, String traditionalResult) {
         if (!matchedKeywords.isEmpty()) {
-            StringBuilder keywordText = new StringBuilder("匹配的关键字：\n");
+            StringBuilder keywordText = new StringBuilder("匹配的關鍵字：\n");
             for (String keyword : matchedKeywords) {
                 keywordText.append(keyword).append("\n");
             }
@@ -271,7 +302,7 @@ public class VoskActivity extends Activity implements
                     .append(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(new Date()));
             tvKeywords.setText(keywordText.toString());
         } else {
-            tvKeywords.setText("未匹配到任何关键字。");
+            tvKeywords.setText("未匹配到關鍵字。");
         }
         resultView.setText("講述的内容：\n" + traditionalResult);
     }
@@ -367,17 +398,13 @@ public class VoskActivity extends Activity implements
     }
 
     private void recognizeMicrophone() {
-        if (speechService != null) {
-            setUiState(STATE_DONE);
-            speechService.stop();
-            speechService = null;
-        } else {
-            setUiState(STATE_MIC);
+        startTime = System.currentTimeMillis();
+        if (speechService == null) {
             try {
-                Recognizer rec = new Recognizer(model, 16000.f, "[\"右轉\", " +
-                        "\"左轉\"," + "\"前進\"," + "\"後退\"," + "\"降落\"]");
+                Recognizer rec = new Recognizer(model, 16000.f, "[\"右轉\", \"左轉\",\"前進\",\"後退\",\"前進\"]");
                 speechService = new SpeechService(rec, 16000.0f);
                 speechService.startListening(this);
+                setUiState(STATE_MIC);
             } catch (IOException e) {
                 setErrorState(e.getMessage());
             }
@@ -386,6 +413,7 @@ public class VoskActivity extends Activity implements
 
 
     private void pause(boolean checked) {
+        isPaused = checked;
         if (speechService != null) {
             speechService.setPause(checked);
         }

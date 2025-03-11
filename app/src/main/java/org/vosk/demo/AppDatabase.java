@@ -29,15 +29,17 @@ public abstract class AppDatabase extends RoomDatabase {
 
                                     Executors.newSingleThreadExecutor().execute(() -> {
                                         InstructionDao dao = INSTANCE.instructionDao();
-                                        dao.insert(new KeywordAction("右轉", 1));
-                                        dao.insert(new KeywordAction("左轉", 2));
-                                        dao.insert(new KeywordAction("前進",3));
+                                        dao.insert(new KeywordAction("前進", 1));
+                                        dao.insert(new KeywordAction("右轉", 2));
+                                        dao.insert(new KeywordAction("左轉",3));
                                         dao.insert(new KeywordAction("後退",4));
-                                        dao.insert(new KeywordAction("開始",5));
-                                        dao.insert(new KeywordAction("返回",6));
-                                        dao.insert(new KeywordAction("停止",7));
-                                        dao.insert(new KeywordAction("上升",8));
-                                        dao.insert(new KeywordAction("降落",9));
+                                        dao.insert(new KeywordAction("靠右",5));
+                                        dao.insert(new KeywordAction("靠左",6));
+                                        dao.insert(new KeywordAction("轉快點",7));
+                                        dao.insert(new KeywordAction("轉慢點",8));
+                                        dao.insert(new KeywordAction("返回",9));
+                                        dao.insert(new KeywordAction("停止",10));
+                                        dao.insert(new KeywordAction("減速",11));
 
 
                                     });
