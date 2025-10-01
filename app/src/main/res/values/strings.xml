@@ -16,6 +16,7 @@
     <string name="continueRecognition">Continue</string>
     <color name="primary_color">#FF6200EE</color>
     <string name="status_preparing">準備中...</string>
+    <string name="speed">速度:</string>
     <string name="speak_button_description">Press to speak</string>
 
 </resources>
