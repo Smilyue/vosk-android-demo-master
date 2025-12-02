@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/action_share" android:title="分享" android:showAsAction="ifRoom"
+        android:icon="@android:drawable/ic_menu_share"/>
+    <item android:id="@+id/action_delete" android:title="刪除" android:showAsAction="ifRoom"
+        android:icon="@android:drawable/ic_menu_delete"/>
+    <item android:id="@+id/action_select_all" android:title="全選" />
+    <item android:id="@+id/action_clear" android:title="清除選取" />
+</menu>

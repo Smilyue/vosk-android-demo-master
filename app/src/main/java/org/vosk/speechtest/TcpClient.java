@@ -36,7 +36,7 @@ public class TcpClient {
             while (!isTcpConnected) {
                 try {
                     Log.d("Socket", "嘗試連接到服務器...");
-                    String serverIp = "192.168.0.148";
+                    String serverIp = "10.61.73.180";
                     int serverPort = 8080;
                     clientSocket = new Socket(serverIp, serverPort);
                     clientSocket.setKeepAlive(true);

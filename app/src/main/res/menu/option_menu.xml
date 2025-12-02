@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/action_toggle_save"
+        android:title="儲存音檔"
+        android:checkable="true"
+        android:checked="true" />
+    <item
+        android:id="@+id/action_show_path"
+        android:title="查看儲存路徑" />
+    <item
+        android:id="@+id/action_list_recordings"
+        android:title="列出音檔" />
+    <item
+        android:id="@+id/action_publish_latest"
+        android:title="開啟/分享" />
+</menu>
