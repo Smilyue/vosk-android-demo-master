@@ -4,7 +4,8 @@
 *.log
 /app/build
 /models/build
-/models/src/main/assets/vosk-model-cn-kaldi-multicn-0.15/
+/models/src/main/assets/*
+/models/src/main/assets/.gitkeep
 #/models
 *.DS_Store
 *.md5
