@@ -1,0 +1,13 @@
+*.gradle
+*.idea
+/local.properties
+/build
+*.log
+/app/build
+/models/build
+/models
+*.DS_Store
+*.md5
+*.lst
+*.iml
+*.hprof

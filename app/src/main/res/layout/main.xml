@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+
+    <LinearLayout
+        android:id="@+id/mainLayout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:visibility="gone">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="end">
+
+            <TextView
+                android:id="@+id/badgeSaving"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="REC SAVING"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:textSize="12sp"
+                android:paddingLeft="8dp"
+                android:paddingRight="8dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:background="@drawable/bg_badge_red"
+                android:visibility="gone"
+                android:layout_marginBottom="8dp"/>
+        </LinearLayout>
+    <Button
+        android:id="@+id/recognize_file"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/recognize_file" />
+
+    <Button
+        android:id="@+id/recognize_mic"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/recognize_microphone"/>
+        <LinearLayout
+            android:id="@+id/controlsRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingTop="12dp">
+
+            <ToggleButton
+                android:id="@+id/toggleMode"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:minWidth="0dp"
+                android:ellipsize="end"
+                android:singleLine="true"
+                android:textOff="CAR"
+                android:textOn="UAV"
+                android:checked="false" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="降噪"
+                android:textSize="16sp"
+                android:layout_marginStart="12dp"
+                android:layout_marginEnd="8dp" />
+
+            <Switch
+                android:id="@+id/s_switch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="false"
+                android:showText="false"
+                android:textOn=""
+                android:textOff=""
+                android:switchMinWidth="48dp"
+                android:layout_marginEnd="25dp" />
+        </LinearLayout>
+
+
+
+
+        <ToggleButton
+            android:id="@+id/pause"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textOff="緊急停止"
+            android:textOn="恢復識別"
+            android:checked="false"/>
+        <TextView
+            android:id="@+id/result_text"
+            android:layout_width="fill_parent"
+            android:layout_height="wrap_content"
+            android:gravity="bottom"
+            android:scrollbars="vertical"
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:textSize="24sp" />
+
+        <TextView
+            android:id="@+id/tv_packet"
+            android:layout_width="fill_parent"
+            android:layout_height="wrap_content"
+            android:gravity="bottom"
+            android:scrollbars="vertical"
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:textSize="24sp" />
+    <TextView
+        android:id="@+id/successText"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:gravity="bottom"
+        android:scrollbars="vertical"
+        android:textAppearance="?android:attr/textAppearanceMedium" />
+
+        <TextView
+            android:id="@+id/tvKeywords"
+            android:layout_width="fill_parent"
+            android:layout_height="wrap_content"
+            android:gravity="bottom"
+            android:scrollbars="vertical"
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:textSize="24sp" />
+
+        <TextView
+            android:id="@+id/tvSpeed"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="速度：1"
+            android:textAppearance="?android:attr/textAppearanceMedium"
+            android:textSize="24sp" />
+    </LinearLayout>
+    <FrameLayout
+        android:id="@+id/loadingOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#CC000000"
+        android:gravity="center">
+
+
+        <TextView
+            android:id="@+id/progessText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Downloading AI model..."
+            android:textSize="18sp"
+            android:textColor="@android:color/white"
+            android:layout_gravity="center_horizontal|bottom"
+            android:layout_marginBottom="32dp"/>
+        <ProgressBar
+            android:id="@+id/progessBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="100"
+            android:progress="0"
+            android:layout_gravity="center_horizontal|bottom"
+            android:layout_marginBottom="60dp"/>
+    </FrameLayout>
+</FrameLayout>

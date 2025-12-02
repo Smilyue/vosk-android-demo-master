@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="app_name">Speech_test</string>
+
+    <string name="recognize_file">Recognize File</string>
+    <string name="recognize_microphone">Recognize Microphone</string>
+    <string name="stop_microphone">Stop Microphone</string>
+    <string name="preparing">Preparing the recognizer\n</string>
+    <string name="ready">Ready\n</string>
+    <string name="failed">Failed to init recognizer %s\n</string>
+    <string name="starting">Starting\n</string>
+    <string name="say_something">Say something\n</string>
+    <string name="stop_file">Stop File</string>
+    <string name="pause">Pause</string>
+    <string name="continueRecognition">Continue</string>
+    <color name="primary_color">#FF6200EE</color>
+    <string name="status_preparing">準備中...</string>
+    <string name="speed">速度:</string>
+    <string name="speak_button_description">Press to speak</string>
+    <string name="empty_recordings">尚無錄音檔</string>
+    <string name="cd_play">播放</string>
+
+</resources>
