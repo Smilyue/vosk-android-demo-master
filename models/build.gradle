@@ -1,0 +1,39 @@
+apply plugin: 'com.android.library'
+
+android {
+    namespace "org.vosk.models"
+    compileSdkVersion 33
+    defaultConfig {
+        minSdkVersion 21
+        targetSdkVersion 33
+    }
+    buildFeatures {
+        buildConfig = false
+    }
+    sourceSets {
+        main {
+            assets.srcDirs += "$buildDir/generated/assets"
+        }
+        androidTest {
+            assets.srcDirs = []
+        }
+        test{
+            assets.srcDirs = []
+        }
+    }
+    aaptOptions {
+        noCompress 'bin','conf','ark','model'
+    }
+}
+
+tasks.register('genUUID') {
+    def uuid = UUID.randomUUID().toString()
+    def odir = file("$buildDir/generated/assets/vosk-model-cn-kaldi-multicn-0.15")
+    def ofile = file("$odir/uuid")
+    doLast {
+        mkdir odir
+        ofile.text = uuid
+    }
+}
+
+preBuild.dependsOn(genUUID)

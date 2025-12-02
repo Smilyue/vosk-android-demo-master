@@ -1,11 +1,11 @@
-*.gradle
 *.idea
 /local.properties
 /build
 *.log
 /app/build
 /models/build
-/models
+/models/src/main/assets/vosk-model-cn-kaldi-multicn-0.15/
+#/models
 *.DS_Store
 *.md5
 *.lst
