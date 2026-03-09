@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
+        android:id="@+id/action_experiment"
+        android:title="Experiment Mode" />
+    <item
         android:id="@+id/action_toggle_save"
         android:title="儲存音檔"
         android:checkable="true"
@@ -12,6 +15,7 @@
         android:id="@+id/action_list_recordings"
         android:title="列出音檔" />
     <item
-        android:id="@+id/action_publish_latest"
-        android:title="開啟/分享" />
+        android:id="@+id/action_show_csv_path"
+        android:title="匯出/查看CSV路徑" />
+
 </menu>

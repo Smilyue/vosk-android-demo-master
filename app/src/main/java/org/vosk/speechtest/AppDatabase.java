@@ -30,19 +30,19 @@ public abstract class AppDatabase extends RoomDatabase {
 
                                     Executors.newSingleThreadExecutor().execute(() -> {
                                         InstructionDao dao = INSTANCE.instructionDao();
-                                        dao.insert(new KeywordAction("前進", VehicleMode.CAR.name(),"10 00 30 77"));
-                                        dao.insert(new KeywordAction("右轉", VehicleMode.CAR.name(),"20 77 40 02"));
-                                        dao.insert(new KeywordAction("左轉", VehicleMode.CAR.name(),"10 77 30 05"));
-                                        dao.insert(new KeywordAction("後退",VehicleMode.CAR.name(),"20 00 40 77"));
-                                        dao.insert(new KeywordAction("停止",VehicleMode.CAR.name(),"50 00 00 00"));
+                                        dao.insert(new KeywordAction("前進", VehicleMode.CAR.name(),"10 00 30 77")); //50/50
+                                        dao.insert(new KeywordAction("右轉", VehicleMode.CAR.name(),"20 77 40 02")); //50/50 0.99754
+                                        dao.insert(new KeywordAction("左轉", VehicleMode.CAR.name(),"10 77 30 05")); //47/50
+                                        dao.insert(new KeywordAction("後退",VehicleMode.CAR.name(),"20 00 40 77")); //49/50
+                                        dao.insert(new KeywordAction("停止",VehicleMode.CAR.name(),"50 00 00 00")); //44/50
                                         dao.insert(new KeywordAction("解鎖",VehicleMode.CAR.name(),"80 FF FF FF"));
                                         dao.insert(new KeywordAction("上鎖",VehicleMode.CAR.name(),"81 FF FF FF"));
                                         dao.insert(new KeywordAction("加速",VehicleMode.CAR.name(),"30 00 40 77"));
                                         dao.insert(new KeywordAction("減速",VehicleMode.CAR.name(),"40 00 40 77"));
                                         dao.insert(new KeywordAction("向前", VehicleMode.UAV.name(),"20 00 30 77")); //無人機開始 50次錯2次
                                         dao.insert(new KeywordAction("向後", VehicleMode.UAV.name(),"20 10 30 77")); //50次錯1
-                                        dao.insert(new KeywordAction("向左", VehicleMode.UAV.name(),"20 20 30 77")); //有問題
-                                        dao.insert(new KeywordAction("向右", VehicleMode.UAV.name(),"20 30 30 77")); //沒問題
+                                        dao.insert(new KeywordAction("向左移動", VehicleMode.UAV.name(),"20 20 30 77")); //沒問題 利用無人機提升向左的信任度
+                                        dao.insert(new KeywordAction("向右移動", VehicleMode.UAV.name(),"20 30 30 77")); //沒問題
                                         dao.insert(new KeywordAction("向下", VehicleMode.UAV.name(),"20 40 30 77")); //50次錯2
                                         dao.insert(new KeywordAction("向上", VehicleMode.UAV.name(),"20 50 30 77")); //50次錯1
                                         dao.insert(new KeywordAction("起飛", VehicleMode.UAV.name(),"20 60 30 77")); //50次全對
@@ -51,10 +51,6 @@ public abstract class AppDatabase extends RoomDatabase {
                                         //dao.insert(new KeywordAction("自旋", VehicleMode.UAV.name(),"20 90 30 77"));
                                         dao.insert(new KeywordAction("向左旋轉", VehicleMode.UAV.name(),"20 90 30 77")); //不用更改 50次錯1個
                                         dao.insert(new KeywordAction("向右旋轉", VehicleMode.UAV.name(),"20 98 30 77"));//不用更改 50次全部都正確
-
-
-
-
 
 
                                     });

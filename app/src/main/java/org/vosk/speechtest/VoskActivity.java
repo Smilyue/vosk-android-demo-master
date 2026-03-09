@@ -18,6 +18,7 @@ package org.vosk.speechtest;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.icu.text.SimpleDateFormat;
 import android.icu.text.Transliterator;
@@ -30,6 +31,7 @@ import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -37,7 +39,8 @@ import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 import android.widget.ToggleButton;
-
+import android.widget.Spinner;
+import android.widget.ArrayAdapter;
 import android.os.Process;
 import android.os.SystemClock;
 
@@ -89,6 +92,16 @@ import java.nio.ByteOrder;
 
 public class VoskActivity extends Activity implements
         RecognitionListener {
+    private String currentScene = "";
+    private int currentEnvDb = -1;
+    private String currentExpectedCmd = "";
+    private String currentSessionId = "-";
+
+    private int successCnt = 0;
+    private int failCnt = 0;
+    private boolean mvpLoggingEnabled = false;
+    private MvpCsvLogger mvpLogger;
+
 
     static private final int STATE_START = 0;
     static private final int STATE_READY = 1;
@@ -98,12 +111,15 @@ public class VoskActivity extends Activity implements
     private static final int msg_error = 7;
     private static final int msg_success = 8;
     private static final int Maxnum = 3;
-    private static final int SILENCE_THRESHOLD = 250;
-    private static final int MIN_UTTER_MS = 100;     // 最短有效語段，避免喘氣誤觸
-    private static final int MAX_UTTER_MS = 1200;    // 安全上限
+    private static final int SILENCE_THRESHOLD = 500;
+    private static final int TAIL_THRESHOLD_MS = 50; // 保底靜音門檻，取代原本的 SILENCE_THRESHOLD
+    private static final int PRE_BUFFER_SIZE = 15;
+    private final java.util.LinkedList<byte[]> preRollBuffer = new java.util.LinkedList<>();
+    private int speechFrameCount = 0;                  // 起始保護計數，防止雜音誤觸
+    private long lastPartialUiMs = 0;                  // Partial UI 更新節流計時器
+    private int currentTailMs = 0;                     // 尾端靜音累計 (物理毫秒)
 
     private boolean inUtterance = false;             // 是否在一段語音中
-    private int tailSilenceMs = 0;               // 語段尾巴的靜音累計
     private long utterStartMs = 0;               // 語段起點時間
 
     private static final String TAG = "VoskActivity";
@@ -142,6 +158,12 @@ public class VoskActivity extends Activity implements
     private long sessionStartTime = 0L;
     private long sessionEndTime = 0L;
     private static final long MIN_INTERVAL_MS = 600;
+    private static final String TCP_MAP_PREFS = "tcp_map";
+    private static final String TCP_FALLBACK_PREFS = "tcp_fallback";
+    private static final String FALLBACK_IP = "fallback_ip";
+    private static final String FALLBACK_PORT = "fallback_port";
+    private static final int DEFAULT_PORT = 8080;
+    private static final int REQ_LOCATION = 1001;
     /* Used to handle permission request */
     private static final int PERMISSIONS_REQUEST_RECORD_AUDIO = 1;
     private Map<String, Integer> keywordMap = new HashMap<>();
@@ -154,6 +176,7 @@ public class VoskActivity extends Activity implements
     private TextView tvpacket;
     private TextView tvSpeed;
     private TextView successText;
+    private TextView tvAckStatus;
     private int frameCnt = 0;
     private int stopCount = 0;
     private int confSuccessCount = 0;
@@ -165,10 +188,14 @@ public class VoskActivity extends Activity implements
     private SpeechService speechService;
     private Recognizer rec;
     private volatile boolean emergencyHold = false;
-
+    private enum AckState { IDLE, WAITING, OK, FAIL }
+    private volatile AckState ackState = AckState.IDLE;
+    private volatile boolean waitingAck = false;
+    private volatile @Nullable String lastCmdForAck = null;
     private boolean firstCommandSent = false;
     private AudioRecord recorder;
-
+    private String lastServerIp = null;
+    private int lastServerPort = -1;
 
     private SpeechStreamService speechStreamService;
     private Thread audioWriterThread;
@@ -212,11 +239,14 @@ public class VoskActivity extends Activity implements
         resultView = findViewById(R.id.result_text);
         tvpacket = findViewById(R.id.tv_packet);
         successText = findViewById(R.id.successText);
+        tvAckStatus = findViewById(R.id.tvAckStatus);
+        setAckState(AckState.IDLE, null);
         tvKeywords = findViewById(R.id.tvKeywords);
         tvSpeed = findViewById(R.id.tvSpeed);
         Switch nsSwitch = findViewById(R.id.s_switch);
         badgeSaving = findViewById(R.id.badgeSaving);
         nsSwitch.setChecked(noiseSuppressionEnabled);
+
         setUiState(STATE_START);
         ToggleButton pauseButton = findViewById(R.id.pause);
         pauseButton.setOnCheckedChangeListener((buttonView, isChecked) -> {
@@ -227,6 +257,7 @@ public class VoskActivity extends Activity implements
                 sendRawPacket(new byte[]{(byte) 0xA5, 0x50, 0x00, 0x00, 0x00, (byte) 0xFA});
             }
         });
+        mvpLogger = new MvpCsvLogger(this);
         db = AppDatabase.getDatabase(this);
         if (db != null) {
             Log.i("VoskActivity", "數據庫已成功初始化");
@@ -274,9 +305,105 @@ public class VoskActivity extends Activity implements
         } else {
             downloadModel(progessBar, progessText, loadingOverlay, mainLayout);
         }
-        tcpClient = new TcpClient("10.61.73.180", 8080, Executors.newSingleThreadExecutor());
-        tcpClient.initializeTcpConnection();
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                    this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                    REQ_LOCATION
+            );
+        } else {
+            applyTcpSettingsAndReconnectIfNeeded();
+        }
         initializeVAD();
+    }
+    private void setAckState(AckState state, @Nullable String detail) {
+        ackState = state;
+        runOnUiThread(() -> {
+            if (tvAckStatus == null) return;
+
+            String text;
+            int color;
+
+            switch (state) {
+                case IDLE:
+                    text = "通訊狀態：待命";
+                    color = 0xFF666666;
+                    break;
+                case WAITING:
+                    text = "通訊狀態：等待回傳中...";
+                    color = 0xFFFF9800; // 橘
+                    break;
+                case OK:
+                    text = "通訊狀態：回傳成功 ✔";
+                    color = 0xFF4CAF50; // 綠
+                    break;
+                case FAIL:
+                    text = "通訊狀態：回傳失敗/超時 ✖";
+                    color = 0xFFF44336; // 紅
+                    break;
+                default:
+                    text = "通訊狀態：-";
+                    color = 0xFF666666;
+            }
+
+            if (detail != null && !detail.isEmpty()) {
+                text += "（" + detail + "）";
+            }
+
+            tvAckStatus.setText(text);
+            tvAckStatus.setTextColor(color);
+        });
+    }
+
+    private void showExperimentDialog() {
+        View view = getLayoutInflater().inflate(R.layout.dialog_experiment, null);
+
+        EditText etEnvDb = view.findViewById(R.id.etEnvDb);
+        Spinner spScene = view.findViewById(R.id.spScene);
+        Spinner spExpectedCmd = view.findViewById(R.id.spExpectedCmd);
+        Button btnStart = view.findViewById(R.id.btnStartSession);
+
+        // scene
+        String[] scenes = {"室內安靜", "室內有人聲", "室外噪音"};
+        spScene.setAdapter(new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_dropdown_item, scenes));
+
+        // commands
+        String[] cmds = {"向前", "向後", "左轉", "右轉", "向上", "向下","起飛","降落","向左旋轉","向右旋轉","懸停"};
+        spExpectedCmd.setAdapter(new ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_dropdown_item, cmds));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setView(view)
+                .setCancelable(true)
+                .create();
+
+        btnStart.setOnClickListener(v -> {
+            try {
+                currentEnvDb = Integer.parseInt(etEnvDb.getText().toString().trim());
+            } catch (Exception e) {
+                Toast.makeText(this, "請輸入正確 dB", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            currentScene = spScene.getSelectedItem().toString();
+            currentExpectedCmd = spExpectedCmd.getSelectedItem().toString();
+
+            currentSessionId = new java.text.SimpleDateFormat(
+                    "yyyyMMdd_HHmmss", Locale.getDefault()).format(new Date());
+
+            successCnt = 0;
+            failCnt = 0;
+
+            Toast.makeText(this,
+                    "Session 開始：" + currentSessionId,
+                    Toast.LENGTH_SHORT).show();
+
+            dialog.dismiss();
+        });
+
+        dialog.show();
     }
 
     private void downloadModel(ProgressBar progessBar, TextView progessText, FrameLayout loadingOverlay, LinearLayout mainLayout) {
@@ -318,14 +445,170 @@ public class VoskActivity extends Activity implements
 
 
     }
+    private void applyTcpSettingsAndReconnectIfNeeded() {
+        String ssid = getCurrentSsid();
+
+        if (ssid == null) {
+            SharedPreferences fb = getSharedPreferences(TCP_FALLBACK_PREFS, MODE_PRIVATE);
+            String ip = fb.getString(FALLBACK_IP, null);
+            int port = fb.getInt(FALLBACK_PORT, DEFAULT_PORT);
+
+            if (TextUtils.isEmpty(ip)) {
+                Log.w(TAG, "No SSID & no fallback -> ask user input");
+                showManualIpDialog(null);
+            } else {
+                connectTcpIfNeeded(ip, port);
+            }
+            return;
+        }
+
+        SharedPreferences map = getSharedPreferences(TCP_MAP_PREFS, MODE_PRIVATE);
+        String ip = map.getString(ssid + "_ip", null);
+        int port = map.getInt(ssid + "_port", DEFAULT_PORT);
+
+        // 沒存過：叫使用者輸入，並且「要存進 ssid 對應表」
+        if (TextUtils.isEmpty(ip)) {
+            Log.w(TAG, "No mapping for SSID=" + ssid + " -> ask user input");
+            showManualIpDialog(ssid);
+            return;
+        }
+
+        connectTcpIfNeeded(ip, port);
+    }
+    @Nullable
+    private String getCurrentSsid() {
+        try {
+            android.net.ConnectivityManager cm =
+                    (android.net.ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            android.net.Network nw = cm.getActiveNetwork();
+            if (nw == null) return null;
+
+            android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(nw);
+            if (caps == null || !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) return null;
+
+            Object info = caps.getTransportInfo();
+            if (!(info instanceof android.net.wifi.WifiInfo)) return null;
+
+            android.net.wifi.WifiInfo wifiInfo = (android.net.wifi.WifiInfo) info;
+            String ssid = wifiInfo.getSSID(); // 可能是 "\"Lab_WIFI\""
+            if (ssid == null) return null;
+
+            ssid = ssid.replace("\"", "");
+            if ("<unknown ssid>".equalsIgnoreCase(ssid)) return null;
+
+            return ssid;
+        } catch (Throwable t) {
+            Log.w(TAG, "getCurrentSsid failed", t);
+            return null;
+        }
+    }
+    private void connectTcpIfNeeded(String ip, int port) {
+        boolean firstInit = (tcpClient == null);
+        boolean changed = (lastServerIp == null) || !ip.equals(lastServerIp) || (port != lastServerPort);
+        if (!firstInit && !changed) return;
+
+        lastServerIp = ip;
+        lastServerPort = port;
+
+        if (tcpClient != null) {
+            tcpClient.closeTcpConnection();
+            tcpClient = null;
+        }
+        tcpClient = new TcpClient(ip, port, Executors.newSingleThreadExecutor());
+        tcpClient.initializeTcpConnection();
+
+        Log.i(TAG, "TCP connected -> " + ip + ":" + port);
+        Toast.makeText(this, "TCP 連線：" + ip + ":" + port, Toast.LENGTH_SHORT).show();
+    }
+    private void showManualIpDialog(@Nullable String ssid) {
+        View view = getLayoutInflater().inflate(R.layout.dialog_manual_ip, null);
+
+        EditText etIp = view.findViewById(R.id.etIp);
+        EditText etPort = view.findViewById(R.id.etPort);
+
+        // 預填：有 ssid → 讀 tcp_map；沒有 ssid → 讀 fallback
+        String preIp = "";
+        int prePort = DEFAULT_PORT;
+
+        if (ssid != null) {
+            SharedPreferences map = getSharedPreferences(TCP_MAP_PREFS, MODE_PRIVATE);
+            preIp = map.getString(ssid + "_ip", "");
+            prePort = map.getInt(ssid + "_port", DEFAULT_PORT);
+        } else {
+            SharedPreferences fb = getSharedPreferences(TCP_FALLBACK_PREFS, MODE_PRIVATE);
+            preIp = fb.getString(FALLBACK_IP, "");
+            prePort = fb.getInt(FALLBACK_PORT, DEFAULT_PORT);
+        }
+
+        etIp.setText(preIp);
+        etPort.setText(String.valueOf(prePort));
+
+        String title = (ssid == null) ? "無法取得 Wi-Fi SSID" : ("此 Wi-Fi 尚未設定：" + ssid);
+
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage("請手動輸入伺服器 IP 與 Port")
+                .setView(view)
+                .setCancelable(false)
+                .setPositiveButton("連線", (d, w) -> {
+                    String ip = etIp.getText().toString().trim();
+                    String portStr = etPort.getText().toString().trim();
+
+                    if (TextUtils.isEmpty(ip) || TextUtils.isEmpty(portStr)) {
+                        Toast.makeText(this, "IP / Port 不可為空", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    int p;
+                    try {
+                        p = Integer.parseInt(portStr);
+                    } catch (Exception e) {
+                        Toast.makeText(this, "Port 格式錯誤", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    if (ssid != null) {
+                        // A 路線：存 ssid -> ip/port
+                        SharedPreferences map = getSharedPreferences(TCP_MAP_PREFS, MODE_PRIVATE);
+                        map.edit()
+                                .putString(ssid + "_ip", ip)
+                                .putInt(ssid + "_port", p)
+                                .apply();
+                    } else {
+                        // 沒 SSID：存 fallback
+                        SharedPreferences fb = getSharedPreferences(TCP_FALLBACK_PREFS, MODE_PRIVATE);
+                        fb.edit()
+                                .putString(FALLBACK_IP, ip)
+                                .putInt(FALLBACK_PORT, p)
+                                .apply();
+                    }
+
+                    //不要再呼叫 apply（避免 ssid=null 時重彈 dialog）
+                    connectTcpIfNeeded(ip, p);
+                })
+                .setNegativeButton("取消", (d, w) -> {
+                    Toast.makeText(this, "未設定伺服器，語音控制將無法使用", Toast.LENGTH_LONG).show();
+                })
+                .show();
+    }
+
+
+
 
     @Override
     public boolean onCreateOptionsMenu(android.view.Menu menu) {
         getMenuInflater().inflate(R.menu.option_menu, menu);
+        menu.findItem(R.id.action_experiment);
         menu.findItem(R.id.action_toggle_save).setChecked(saveAudio);
-        menu.findItem(R.id.action_show_path);
         menu.findItem(R.id.action_list_recordings);
+        menu.findItem(R.id.action_show_csv_path);
         return true;
+    }
+    private void shareExperimentCsv() {
+        if (mvpLogger == null) return;
+        File f = mvpLogger.getCsvFile();
+        Toast.makeText(this, "CSV 路徑: " + f.getAbsolutePath(), Toast.LENGTH_LONG).show();
+        Log.i("MVP_CSV", "CSV path = " + f.getAbsolutePath());
     }
 
     @Override
@@ -344,9 +627,11 @@ public class VoskActivity extends Activity implements
         }else if (item.getItemId() == R.id.action_list_recordings) {
             startActivity(new android.content.Intent(this, RecordingListActivity.class));
             return true;
-        }else if (item.getItemId() == R.id.action_publish_latest) {
-            publishLatestToMusic();
+        }else if (item.getItemId() == R.id.action_experiment) {
+            showExperimentDialog();
             return true;
+        } else if (item.getItemId() == R.id.action_show_csv_path) {
+            shareExperimentCsv();
         }
 
         return super.onOptionsItemSelected(item);
@@ -518,9 +803,9 @@ public class VoskActivity extends Activity implements
         vad = Vad.builder()
                 .setSampleRate(SampleRate.SAMPLE_RATE_16K)  // 設定取樣率為 16 kHz
                 .setFrameSize(FrameSize.FRAME_SIZE_320)    // 設定每幀大小為 320（約 20ms）
-                .setMode(Mode.NORMAL)                      // 設定為正常模式
-                .setSilenceDurationMs(200)                 // 設定靜音時間為 150 毫秒
-                .setSpeechDurationMs(50)                   // 設定語音檢測時間為 50 毫秒
+                .setMode(Mode.VERY_AGGRESSIVE)                    // 設定為激進模式
+                .setSilenceDurationMs(150)                 // 設定靜音時間為 150 毫秒
+                .setSpeechDurationMs(100)                   // 設定語音檢測時間為 50 毫秒
                 .build();
     }
     // 初始化SpeechService
@@ -569,6 +854,14 @@ public class VoskActivity extends Activity implements
                 runOnUiThread(() -> downloadModel(progessBar, progessText, loadingOverlay, mainLayout));
             } else {
                 showPermissionDeniedDialog();
+            }
+            return;
+        }
+        if (requestCode == REQ_LOCATION) {
+            if(grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED){
+                applyTcpSettingsAndReconnectIfNeeded();
+            }else {
+                showManualIpDialog(null);
             }
         }
     }
@@ -651,56 +944,106 @@ public class VoskActivity extends Activity implements
             return -1.0;
         }
     }
-
     @Override
     public void onResult(String hypothesis) {
-        Log.d("VoskActivity", "onResult: " + hypothesis);
-        if (recState == RecState.PAUSED) return;
-        LatencyRecord record = latencyRecordRef.get();
-        wasSpeech = false;
-        if (record == null) {
-            Log.w(TAG, "onResult 觸發，但沒有找到對應的語音事件起點 (可能是語音過短或VAD觸發間隙)，忽略。");
-            return;
+        // UI-only：不送包、不寫 CSV
+        runOnUiThread(() -> {
+            try {
+                JSONObject json = new JSONObject(hypothesis);
+                String text = json.optString("text", "");
+                if (!TextUtils.isEmpty(text)) {
+                    String trad = SIMPLIFIED_TO_TRADITIONAL.transliterate(text).replaceAll("\\s+", "");
+                    updateResultView(trad);
+                }
+            } catch (Exception ignore) {}
+        });
+    }
+    private void finalizeRecognition(String reason) {
+        long finalTimeMs = SystemClock.elapsedRealtime();
+        String resultJson = rec.getFinalResult();
+        long latencyMs = finalTimeMs - utterStartMs;
+
+        // 快照當下的數據
+        final LatencyRecord recordSnap = latencyRecordRef.get();
+
+        // 直接丟給後台處理核心，並把快照傳進去
+        executorService.execute(() -> {
+            processCommandLogic(resultJson, latencyMs, recordSnap);
+        });
+
+        try {
+            rec.reset();
+        } catch (Throwable t) {
+            try {
+                rec.close();
+            } catch (Throwable ignore) {
+            }
+            try {
+                rec = new Recognizer(model, 16000.f, buildGrammar());
+                rec.setWords(true);
+            } catch (IOException e) {
+                Log.e(TAG, "重建 Recognizer 失敗", e);
+                recState = RecState.STOPPED;
+                setErrorState(e.getMessage());
+                return;
+            }
         }
+        inUtterance = false;
+        currentTailMs = 0;
+        speechFrameCount = 0;
+    }
+    private void processCommandLogic(String hypothesis, long manualLatencyMs, LatencyRecord recordSnap) {
         try {
             JSONObject json = new JSONObject(hypothesis);
-            handleWordConfidences(json);
-            String finalText = json.optString("text", "");
-            if (TextUtils.isEmpty(finalText)) return;
-            String collapsed = collapseDuplicates(finalText); //去除重複詞
-            String traditionalPartial = SIMPLIFIED_TO_TRADITIONAL.transliterate(collapsed)
-                    .replaceAll("\\s+", ""); // 簡繁轉換並移除所有空格
-            if (traditionalPartial.isEmpty()) return;
-            String hit = extractHit(traditionalPartial);
-            if (hit == null) return;
-            if (record != null) {
-                if (!hit.equals(record.partialCommand)) {
-                    record.partialCommand = hit; //
-                    record.T2_partialOkNano = System.nanoTime();
+            String text = json.optString("text", "");
+            if (TextUtils.isEmpty(text)) return;
+
+            // 1. 簡繁轉換與指令匹配
+            String traditionalText = SIMPLIFIED_TO_TRADITIONAL.transliterate(text).replaceAll("\\s+", "");
+            String hit = extractHit(traditionalText);
+            double avgConf = handleWordConfidences(json);
+
+            // 2. 實驗模式：計數與 CSV 紀錄 (這部分在背景線程跑是安全的)
+            boolean isSuccess = (hit != null);
+            if (mvpLoggingEnabled) {
+                if (isSuccess) successCnt++; else failCnt++;
+
+                if (mvpLogger != null) {
+                    mvpLogger.logRow(currentScene, currentEnvDb, currentExpectedCmd,
+                            text, (hit == null ? "" : hit), avgConf, isSuccess, manualLatencyMs);
                 }
             }
-            if (record != null) {
-                switch (hit) {
-                    case "加速":
-                        voiceSpeedUp(record);
-                        break;
-                    case "減速":
-                        voiceSpeedDown(record);
-                        break;
-                    default:
-                        generatePacket(Collections.singletonList(hit), record);
-                }
+
+            // 3. 【核心修正】發送 TCP 指令封包 (必須使用 recordSnap 確保數據準確)
+            if (isSuccess) {
+                generatePacket(Collections.singletonList(hit), recordSnap);
             }
+
+            // 4. 【核心修正】統一回到 UI 主線程更新介面
             runOnUiThread(() -> {
-                updateResultView(traditionalPartial); // 更新主顯示區
-                updateKeywordView(Collections.singletonList(hit));  // 更新匹配關鍵字區域
+                // 更新辨識結果文字
+                updateResultView(traditionalText);
+                String latencyStr = (manualLatencyMs >= 0) ? (manualLatencyMs + " ms") : "-";
+                if (isSuccess) {
+                    // 更新匹配關鍵字 UI
+                    updateKeywordView(Collections.singletonList(hit));
+                    successText.setText(String.format("[%s] 延遲: %s", hit, latencyStr));
+                } else {
+                    successText.setText(String.format(Locale.getDefault(), "[未命中] 延遲: %s", latencyStr));
+                }
+
+                // 更新實驗統計數據 (Success/Fail)
+                TextView tvExpStats = findViewById(R.id.tvExpStats);
+                if (tvExpStats != null) {
+                    tvExpStats.setText("Stats: " + successCnt + " success / " + failCnt + " fail");
+                }
             });
 
-        } catch (JSONException e) {
-            Log.e("VoskActivity", "Error parsing hypothesis JSON", e);
+        } catch (Exception e) {
+            Log.e(TAG, "處理指令邏輯時發生錯誤", e);
         }
-
     }
+
 
     @Override
     public void onFinalResult(String hypothesis) {
@@ -764,10 +1107,10 @@ public class VoskActivity extends Activity implements
 
 
        // if (command != null && command.equals(lastSentCommand)) return;
-
+        if (waitingAck) return;
 
         if (now - lastSentAt < MIN_INTERVAL_MS) return;
-
+        lastCmdForAck = command;
         sendRawPacket(packet, record);
 
         lastSentCommand = command;
@@ -775,11 +1118,10 @@ public class VoskActivity extends Activity implements
     }
 
 
-    private void sendRawPacket(byte[] packet, LatencyRecord record) {
+    private void sendRawPacket(byte[] packet, @Nullable LatencyRecord record) {
         long T3_packetSendNano = System.nanoTime();
 
-
-        if (record.T1_speechStartNano > 0 && record.T2_partialOkNano > 0) {
+        if (record != null && record.T1_speechStartNano > 0 && record.T2_partialOkNano > 0) {
             double tMicToOk = (record.T2_partialOkNano - record.T1_speechStartNano) / 1_000_000.0;
             double tOkToSend = (T3_packetSendNano - record.T2_partialOkNano) / 1_000_000.0;
             double tEndToEnd = (T3_packetSendNano - record.T1_speechStartNano) / 1_000_000.0;
@@ -791,14 +1133,41 @@ public class VoskActivity extends Activity implements
         sendRawPacket(packet);
     }
 
+
     private void sendRawPacket(byte[] packet) {
         if (recState == RecState.PAUSED) {
             runOnUiThread(() -> tvpacket.setText("(BLOCKED) " + HexUtils.byteToHexString(packet)));
             return;
         }
-        tcpClient.sendPacket(packet, System.currentTimeMillis(), System.currentTimeMillis());
+        if (tcpClient == null || !tcpClient.isTcpConnected()) {
+            setAckState(AckState.FAIL, "TCP 未連線");
+            return;
+        }
+
+        // 顯示封包
         runOnUiThread(() -> tvpacket.setText(HexUtils.byteToHexString(packet)));
+
+        // ★進入等待狀態
+        waitingAck = true;
+        setAckState(AckState.WAITING, (lastCmdForAck != null ? lastCmdForAck : null));
+
+        // ★送出並等待 ACK
+        tcpClient.sendPacketAwaitAck(packet, 800)
+                .whenComplete((ok, err) -> {
+                    boolean success = (err == null && Boolean.TRUE.equals(ok));
+
+                    // ★解除等待，回到監聽
+                    waitingAck = false;
+
+                    if (success) {
+                        setAckState(AckState.OK, (lastCmdForAck != null ? lastCmdForAck : null));
+                    } else {
+                        String reason = (err != null ? err.getMessage() : "timeout");
+                        setAckState(AckState.FAIL, (lastCmdForAck != null ? lastCmdForAck + ", " + reason : reason));
+                    }
+                });
     }
+
 
 
     private void voiceSpeedUp(LatencyRecord record) {
@@ -902,7 +1271,7 @@ public class VoskActivity extends Activity implements
             return;
         }
 
-        StringBuilder keywordText = new StringBuilder("匹配的關鍵字：\n");
+        StringBuilder keywordText = new StringBuilder();
         for (String keyword : matchedKeywords) {
             keywordText.append(keyword).append("\n");
         }
@@ -912,7 +1281,7 @@ public class VoskActivity extends Activity implements
     }
 
     private void updateResultView(String cleanTraditionalText) {
-        resultView.setText("即時結果：\n" + cleanTraditionalText);
+        resultView.setText(cleanTraditionalText);
     }
 
 
@@ -1050,7 +1419,7 @@ public class VoskActivity extends Activity implements
             "左转", "右转", "前进", "后退", "停止", "加速", "减速", "上锁", "解锁"
     };
     private static final String[] UAV_CMDS = {
-            "向前", "向後", "無人機向左飛行", "無人機向右飛行", "向上", "向下", "無人機起飞", "無人機降落", "無人機懸停", "向左旋转", "向右旋转"
+            "向前", "向后", "无人机向左移动", "无人机向右移动", "向上", "向下", "無人機起飞", "無人機降落", "無人機懸停", "向左旋转", "向右旋转"
     };
 
     private String buildGrammar() {
@@ -1091,7 +1460,7 @@ public class VoskActivity extends Activity implements
                     AudioFormat.ENCODING_PCM_16BIT);
             int bufferSize = Math.max(minBuf, FRAME_BYTES * 50);
             recorder = new AudioRecord(
-                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                    MediaRecorder.AudioSource.MIC,
                     SAMPLE_RATE,
                     AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT,
@@ -1136,135 +1505,90 @@ public class VoskActivity extends Activity implements
             short[] audioFrame = new short[FRAME_SAMPLES];
             ByteBuffer bb = ByteBuffer.allocateDirect(FRAME_BYTES).order(ByteOrder.LITTLE_ENDIAN);
 
-            Log.d(TAG, "音訊寫入線程已啟動");
+            Log.d(TAG, "音訊處理線程啟動");
 
             while (recState != RecState.STOPPED && !Thread.currentThread().isInterrupted()) {
-                // 1) 從已存在的 recorder 讀資料
                 int nread = recorder.read(frameBytes, 0, FRAME_BYTES, AudioRecord.READ_BLOCKING);
-                if (nread <= 0) continue; // 讀失敗或 0 長度就跳過
+                if (nread <= 0) continue;
+                if (waitingAck) {
+                    continue;
+                }
+
+                // B. 異步存檔 (不阻塞辨識)
                 if (saveAudio && wavWriter != null && recState != RecState.PAUSED) {
-                    try {
-                        wavWriter.append(frameBytes, nread);
-                    } catch (IOException ignore) {
-                    }
+                    final byte[] writeData = frameBytes.clone();
+                    executorService.execute(() -> {
+                        try { wavWriter.append(writeData, nread); } catch (IOException ignore) {}
+                    });
                 }
 
-                boolean isSpeech = false;
-                if (recState == RecState.PAUSED) {
-                    Arrays.fill(frameBytes, (byte) 0);
-                    wasSpeech = false;
-                } else {
-                    bb.clear();
-                    bb.put(frameBytes);
-                    bb.flip();
-                    bb.asShortBuffer().get(audioFrame);
+                if (recState == RecState.PAUSED) continue;
 
-                    isSpeech = vad.isSpeech(audioFrame);
-                    if (isSpeech && !wasSpeech) {
-                        latencyRecordRef.set(new LatencyRecord(System.nanoTime()));
-                        Log.d("LATENCY_TRACK", "語音上升沿觸發 (T1)");
-                    }
-                    LatencyRecord r = latencyRecordRef.get();
-                    if (r != null) r.isVoiceFrame = isSpeech;
-                    wasSpeech = isSpeech;
-                }
-                long now = SystemClock.elapsedRealtime();
+                bb.clear();
+                bb.put(frameBytes, 0, nread);
+                bb.flip();
+                bb.asShortBuffer().get(audioFrame, 0, nread / 2);
+                boolean isSpeech = vad.isSpeech(audioFrame);
                 if (isSpeech) {
+                    speechFrameCount++;
                     if (!inUtterance) {
-                        inUtterance = true;
-                        utterStartMs = now;
-                        tailSilenceMs = 0;
-                    } else {
-                        tailSilenceMs = 0;
-                    }
-                    boolean isFinal = rec.acceptWaveForm(frameBytes, nread);
-                    if (isFinal) {
-                        long finalTimeMs = SystemClock.elapsedRealtime();
-                        long latencyMs = finalTimeMs - utterStartMs;
-                        double latencySec = latencyMs / 1000.0;
-
-                        Log.i("LATENCY_E2E",
-                                String.format(Locale.getDefault(),
-                                        "Mic→FinalResult: %d ms (%.3f s)", latencyMs, latencySec));
-                        runOnUiThread(() -> successText.setText(
-                                String.format(Locale.getDefault(),
-                                        "本次指令耗時：%d ms (%.3f s)", latencyMs, latencySec)
-                        ));
-                        String result = rec.getResult();
-                        runOnUiThread(() -> onResult(result));
-                        inUtterance = false;
-                        tailSilenceMs = 0;
-                        try {
-                            rec.reset();
-                        } catch (Throwable t) {
-                            try {
-                                rec.close();
-                            } catch (Throwable ignore) {
-                            }
-                            try {
-                                rec = new Recognizer(model, SAMPLE_RATE, buildGrammar());
-                            } catch (IOException e) {
-                                Log.e(TAG, "重建 Recognizer 失敗", e);
-                                setErrorState(e.getMessage());
-                                break; // 或 return/停止錄音線程，看你的流程
-                            }
+                        for(byte[] past : preRollBuffer){
+                            rec.acceptWaveForm(past, past.length);
                         }
-                    } else {
+                        preRollBuffer.clear();
+
+                        inUtterance = true;
+                        utterStartMs = SystemClock.elapsedRealtime();
+                        latencyRecordRef.set(new LatencyRecord(System.nanoTime()));
+                    }
+                    currentTailMs = 0;
+                    boolean isFinal = rec.acceptWaveForm(frameBytes, nread);
+                    if (isFinal && inUtterance) {
+                        finalizeRecognition("Vosk-Priority-Final");
+                        continue;
+                    }
+
+                    // E. Partial UI 節流 (每 100ms 更新一次畫面)
+                    long now = SystemClock.elapsedRealtime();
+                    if (now - lastPartialUiMs >= 100) {
+                        lastPartialUiMs = now;
                         String partial = rec.getPartialResult();
                         runOnUiThread(() -> onPartialResult(partial));
                     }
                 } else {
+                    speechFrameCount = 0;
                     if (inUtterance) {
-                        // 尾端靜音累計（你每幀 20ms；若已在 while 外設 frameMs 就用 frameMs）
-                        tailSilenceMs += 20;
+                        int frameMs = (int) (1000.0 * nread / (SAMPLE_RATE * 2));
+                        currentTailMs += frameMs;
+                        // 即使是靜音幀也餵給引擎，確保語尾處理完整
+                        boolean isFinal = rec.acceptWaveForm(frameBytes, nread);
 
-                        // 收尾條件：靜音超過門檻，或語段太長
-                        if (tailSilenceMs >= SILENCE_THRESHOLD || (now - utterStartMs) >= MAX_UTTER_MS) {
-                            // 主動要 final
-                            long finalTimeMs = now; // 這裡的 now 已經是 SystemClock.elapsedRealtime()
-                            long latencyMs = finalTimeMs - utterStartMs;
-                            double latencySec = latencyMs / 1000.0;
-
-                            Log.i("LATENCY_E2E",
-                                    String.format(Locale.getDefault(),
-                                            "[SilenceEnd] Mic→FinalResult: %d ms (%.3f s)",
-                                            latencyMs, latencySec));
-
-                            runOnUiThread(() -> successText.setText(
-                                    String.format(Locale.getDefault(),
-                                            "本次指令耗時：%d ms (%.3f s)", latencyMs, latencySec)
-                            ));
-                            String finalJson = rec.getFinalResult();
-                            runOnUiThread(() -> onResult(finalJson));
-
-                            inUtterance = false;
-                            tailSilenceMs = 0;
-                            try {
-                                rec.reset();
-                            } catch (Throwable t) {
-                                try {
-                                    rec.close();
-                                } catch (Throwable ignore) {
-                                }
-                                try {
-                                    rec = new Recognizer(model, SAMPLE_RATE, buildGrammar());
-                                } catch (IOException e) {
-                                    Log.e(TAG, "重建 Recognizer 失敗", e);
-                                    setErrorState(e.getMessage());
-                                    break; // 或 return/停止錄音線程，看你的流程
-                                }
-                            }
+                        // F. 判斷是否結算：引擎主動結束 OR 達到靜音門檻
+                        if (isFinal || currentTailMs >= TAIL_THRESHOLD_MS) {
+                            finalizeRecognition(isFinal ? "Vosk-End-In-Tail" : "Tail-Threshold-Final");
                         }
+                    }else {
+                        if (preRollBuffer.size() >= PRE_BUFFER_SIZE) preRollBuffer.removeFirst();
+                        preRollBuffer.add(java.util.Arrays.copyOf(frameBytes, nread));
                     }
                 }
-
             }
-
-            // 清理（這裡不釋放 recorder，統一在 stopSpeechRecognition）
-            Log.d(TAG, "音訊寫入線程已停止");
-        }, "AudioWriter");
+        }, "Audio-Thread-Stable");
         audioWriterThread.start();
     }
+
+
+    /**
+     * 全非同步處理中心：負責 TCP、日誌與 UI 顯示
+     */
+   /* private void handleFinalResultAsync(String hypothesis, long latencyMs, LatencyRecord recordSnap) {
+        // 透過 runOnUiThread 回到主執行緒更新介面並執行原本的 onResult 邏輯
+        runOnUiThread(() -> {
+            // 呼叫原本介面規定的 onResult 方法，或是直接執行處理邏輯
+            // 建議直接在此執行解析，或確保你的處理邏輯能吃到 recordSnap
+            processCommandLogic(hypothesis, latencyMs, recordSnap);
+        });
+    }*/
 
     private void stopSpeechRecognition(String reason) {
         Log.i(TAG, "stopSpeechRecognition() reason= " + reason);
@@ -1276,7 +1600,7 @@ public class VoskActivity extends Activity implements
         Thread writerThread = audioWriterThread;
         AudioRecord ar = recorder;
 
-        // (1) 先停錄，解除 read() 阻塞，再釋放 NS 和 AudioRecord
+
         try {
             if (ar != null && ar.getState() == AudioRecord.STATE_INITIALIZED) {
                 try {

@@ -1,22 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    xmlns:app="http://schemas.android.com/apk/res-auto">
+    android:layout_height="match_parent">
 
-
+    <!-- 主畫面 -->
     <LinearLayout
         android:id="@+id/mainLayout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:padding="16dp"
-        android:visibility="gone">
+        android:visibility="gone"
+        android:background="#F6F7FB">
+
+        <!-- 頂部狀態列：REC badge -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:gravity="end">
+            android:gravity="end"
+            android:layout_marginBottom="8dp">
 
             <TextView
                 android:id="@+id/badgeSaving"
@@ -26,124 +30,389 @@
                 android:textColor="#FFFFFF"
                 android:textStyle="bold"
                 android:textSize="12sp"
-                android:paddingLeft="8dp"
-                android:paddingRight="8dp"
-                android:paddingTop="4dp"
-                android:paddingBottom="4dp"
+                android:paddingLeft="10dp"
+                android:paddingRight="10dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
                 android:background="@drawable/bg_badge_red"
-                android:visibility="gone"
-                android:layout_marginBottom="8dp"/>
-        </LinearLayout>
-    <Button
-        android:id="@+id/recognize_file"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/recognize_file" />
-
-    <Button
-        android:id="@+id/recognize_mic"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/recognize_microphone"/>
-        <LinearLayout
-            android:id="@+id/controlsRow"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingTop="12dp">
-
-            <ToggleButton
-                android:id="@+id/toggleMode"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:minWidth="0dp"
-                android:ellipsize="end"
-                android:singleLine="true"
-                android:textOff="CAR"
-                android:textOn="UAV"
-                android:checked="false" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="降噪"
-                android:textSize="16sp"
-                android:layout_marginStart="12dp"
-                android:layout_marginEnd="8dp" />
-
-            <Switch
-                android:id="@+id/s_switch"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:checked="false"
-                android:showText="false"
-                android:textOn=""
-                android:textOff=""
-                android:switchMinWidth="48dp"
-                android:layout_marginEnd="25dp" />
+                android:visibility="gone" />
         </LinearLayout>
 
-
-
-
-        <ToggleButton
-            android:id="@+id/pause"
+        <!-- 控制區 Card -->
+        <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textOff="緊急停止"
-            android:textOn="恢復識別"
-            android:checked="false"/>
-        <TextView
-            android:id="@+id/result_text"
-            android:layout_width="fill_parent"
-            android:layout_height="wrap_content"
-            android:gravity="bottom"
-            android:scrollbars="vertical"
-            android:textAppearance="?android:attr/textAppearanceMedium"
-            android:textSize="24sp" />
+            app:cardUseCompatPadding="true"
+            app:cardCornerRadius="14dp"
+            android:layout_marginBottom="12dp">
 
-        <TextView
-            android:id="@+id/tv_packet"
-            android:layout_width="fill_parent"
-            android:layout_height="wrap_content"
-            android:gravity="bottom"
-            android:scrollbars="vertical"
-            android:textAppearance="?android:attr/textAppearanceMedium"
-            android:textSize="24sp" />
-    <TextView
-        android:id="@+id/successText"
-        android:layout_width="fill_parent"
-        android:layout_height="wrap_content"
-        android:gravity="bottom"
-        android:scrollbars="vertical"
-        android:textAppearance="?android:attr/textAppearanceMedium" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="14dp">
 
-        <TextView
-            android:id="@+id/tvKeywords"
-            android:layout_width="fill_parent"
-            android:layout_height="wrap_content"
-            android:gravity="bottom"
-            android:scrollbars="vertical"
-            android:textAppearance="?android:attr/textAppearanceMedium"
-            android:textSize="24sp" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="控制面板"
+                    android:textStyle="bold"
+                    android:textSize="16sp"
+                    android:layout_marginBottom="10dp"
+                    android:textColor="#222222" />
 
-        <TextView
-            android:id="@+id/tvSpeed"
-            android:layout_width="wrap_content"
+                <Button
+                    android:id="@+id/recognize_file"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/recognize_file" />
+
+                <Button
+                    android:id="@+id/recognize_mic"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/recognize_microphone" />
+
+                <!-- CAR/UAV + 降噪 -->
+                <LinearLayout
+                    android:id="@+id/controlsRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginTop="12dp">
+
+                    <ToggleButton
+                        android:id="@+id/toggleMode"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:minWidth="0dp"
+                        android:ellipsize="end"
+                        android:singleLine="true"
+                        android:textOff="CAR"
+                        android:textOn="UAV"
+                        android:checked="false" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="降噪"
+                        android:textSize="14sp"
+                        android:textColor="#333333"
+                        android:layout_marginStart="12dp"
+                        android:layout_marginEnd="8dp" />
+
+                    <Switch
+                        android:id="@+id/s_switch"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="false"
+                        android:showText="false"
+                        android:switchMinWidth="52dp" />
+                </LinearLayout>
+
+                <!-- 緊急停止 -->
+                <ToggleButton
+                    android:id="@+id/pause"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:textOff="緊急停止"
+                    android:textOn="恢復識別"
+                    android:checked="false" />
+
+                <!-- 速度 -->
+                <TextView
+                    android:id="@+id/tvSpeed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="速度：1"
+                    android:textStyle="bold"
+                    android:textSize="18sp"
+                    android:textColor="#222222"
+                    android:layout_marginTop="10dp" />
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- 實驗面板 Card -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/expPanel"
+            android:visibility="gone"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="速度：1"
-            android:textAppearance="?android:attr/textAppearanceMedium"
-            android:textSize="24sp" />
+            app:cardUseCompatPadding="true"
+            app:cardCornerRadius="14dp"
+            android:layout_marginBottom="12dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Experiment Mode"
+                        android:textStyle="bold"
+                        android:textSize="16sp"
+                        android:textColor="#222222" />
+
+                    <Switch
+                        android:id="@+id/swExperimentMode"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="false" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvSessionInfo"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Session: -"
+                    android:textSize="13sp"
+                    android:textColor="#555555"
+                    android:layout_marginTop="6dp"
+                    android:layout_marginBottom="10dp" />
+
+                <!-- env dB -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="環境 dB"
+                        android:textSize="14sp"
+                        android:textColor="#333333"
+                        android:layout_marginEnd="10dp" />
+
+                    <EditText
+                        android:id="@+id/etEnvDb"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:inputType="number"
+                        android:hint="例如 55"
+                        android:padding="10dp"
+                        android:background="@android:drawable/edit_text"
+                        android:textColor="#222222"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
+                <!-- scene / expected command -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="10dp">
+
+                    <Spinner
+                        android:id="@+id/spScene"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:spinnerMode="dropdown" />
+
+                    <Spinner
+                        android:id="@+id/spExpectedCmd"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="10dp"
+                        android:spinnerMode="dropdown" />
+                </LinearLayout>
+
+                <!-- Session Buttons -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="10dp">
+
+                    <Button
+                        android:id="@+id/btnStartSession"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Start Session" />
+
+                    <Button
+                        android:id="@+id/btnStopSession"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="10dp"
+                        android:text="Stop Session" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tvExpStats"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Stats: -"
+                    android:textSize="13sp"
+                    android:textColor="#555555"
+                    android:layout_marginTop="8dp" />
+
+                <Button
+                    android:id="@+id/btnExportCsv"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Export CSV"
+                    android:layout_marginTop="10dp" />
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- 結果區：可捲動 + 卡片化 -->
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <androidx.cardview.widget.CardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardUseCompatPadding="true"
+                    app:cardCornerRadius="14dp"
+                    android:layout_marginBottom="12dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="14dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="辨識結果"
+                            android:textStyle="bold"
+                            android:textSize="15sp"
+                            android:textColor="#222222"
+                            android:layout_marginBottom="8dp" />
+
+                        <TextView
+                            android:id="@+id/result_text"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textAppearance="?android:attr/textAppearanceMedium"
+                            android:textSize="20sp"
+                            android:textColor="#111111" />
+
+                        <TextView
+                            android:id="@+id/successText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:textAppearance="?android:attr/textAppearanceSmall"
+                            android:textColor="#444444" />
+                    </LinearLayout>
+                </androidx.cardview.widget.CardView>
+
+                <androidx.cardview.widget.CardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardUseCompatPadding="true"
+                    app:cardCornerRadius="14dp"
+                    android:layout_marginBottom="12dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="14dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="匹配關鍵字"
+                            android:textStyle="bold"
+                            android:textSize="15sp"
+                            android:textColor="#222222"
+                            android:layout_marginBottom="8dp" />
+
+                        <TextView
+                            android:id="@+id/tvKeywords"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textAppearance="?android:attr/textAppearanceMedium"
+                            android:textSize="20sp"
+                            android:textColor="#111111" />
+                    </LinearLayout>
+                </androidx.cardview.widget.CardView>
+
+                <androidx.cardview.widget.CardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardUseCompatPadding="true"
+                    app:cardCornerRadius="14dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="14dp">
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="封包 / Debug"
+                            android:textStyle="bold"
+                            android:textSize="15sp"
+                            android:textColor="#222222"
+                            android:layout_marginBottom="8dp" />
+                        <TextView
+                            android:id="@+id/tvAckStatus"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="通訊狀態：待命"
+                            android:textSize="14sp"
+                            android:textColor="#666666"
+                            android:layout_marginBottom="6dp"/>
+
+                        <TextView
+                            android:id="@+id/tv_packet"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:textAppearance="?android:attr/textAppearanceMedium"
+                            android:textSize="18sp"
+                            android:textColor="#111111" />
+                    </LinearLayout>
+                </androidx.cardview.widget.CardView>
+
+            </LinearLayout>
+        </ScrollView>
+
     </LinearLayout>
+
+    <!-- 下載模型遮罩：保留原流程 -->
     <FrameLayout
         android:id="@+id/loadingOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="#CC000000"
         android:gravity="center">
-
 
         <TextView
             android:id="@+id/progessText"
@@ -153,7 +422,8 @@
             android:textSize="18sp"
             android:textColor="@android:color/white"
             android:layout_gravity="center_horizontal|bottom"
-            android:layout_marginBottom="32dp"/>
+            android:layout_marginBottom="32dp" />
+
         <ProgressBar
             android:id="@+id/progessBar"
             style="?android:attr/progressBarStyleHorizontal"
@@ -162,6 +432,7 @@
             android:max="100"
             android:progress="0"
             android:layout_gravity="center_horizontal|bottom"
-            android:layout_marginBottom="60dp"/>
+            android:layout_marginBottom="60dp" />
     </FrameLayout>
+
 </FrameLayout>
